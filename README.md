@@ -9,5 +9,7 @@ Coming soon
   - making pyduktape cimportable (meaning you could add it in as a cython library if you really wanted to)
   - wanted to see about writing an asyncio / anyio branch for this eventually since a wrote another tool a while ago that can give something
     like it aiosqlite styled behaviors.
+  - Plans on reviving the duktape library all-together in the future hence using 2.99.99.
+
 - Friendlier license for webscrapers, users and developers who want to solve & crack html5 puzzles & captchas without a webdriver and easier requirements (less diskspace consumed).
 - py2js can be slow at rendering things at times.

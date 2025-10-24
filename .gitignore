@@ -1,0 +1,20 @@
+
+# Contains Directory Leakage
+pyduktape3/_pyduktape3.c
+
+# Contains Cython HTML
+pyduktape3/_pyduktape3.html
+
+# uv venv
+.venv/*
+# Cython distributed build
+build
+# ignore vscode config
+.vscode/*
+.vscode
+
+# Compiled artifacts
+pyduktape3/*.pyd
+pyduktape3/*.so
+
+
