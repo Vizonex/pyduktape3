@@ -82,7 +82,7 @@ jobs:
       #     user: __token__
       #     password: ${{ secrets.PYPI_TEST_TOKEN }}
       #     repository-url: https://test.pypi.org/legacy/
-        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'test' }}
+        # if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'test' }}
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
