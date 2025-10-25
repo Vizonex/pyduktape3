@@ -1,15 +1,5 @@
 name: Publish
-on:
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: "The branch, tag or SHA to release from"
-        required: true
-        default: "master"
-      target:
-        description: "Which environment(test/live/all) should be published"
-        required: true
-        default: "all"
+on: release
 
 jobs:
   build_wheels:
