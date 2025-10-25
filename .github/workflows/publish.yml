@@ -1,5 +1,13 @@
-name: Publish
-on: release
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   build_wheels:
