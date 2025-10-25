@@ -17,4 +17,5 @@ build
 pyduktape3/*.pyd
 pyduktape3/*.so
 
+__pycache__
 

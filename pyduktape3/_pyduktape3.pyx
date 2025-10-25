@@ -1,22 +1,16 @@
 # cython: language_level = 3, freethreading_compatible = True
-# distutils: sources = 'pyduktape3/duktape.c'
-
-from .duktape cimport *
 import contextlib
 import os
 import traceback
-from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8
-from cpython.exc cimport PyErr_SetNone, PyErr_SetString
-from cpython.bytes cimport PyBytes_GET_SIZE, PyBytes_AS_STRING
-from cpython.mem cimport PyMem_Free, PyMem_Realloc, PyMem_Malloc
-
-
-# TODO: (Vizonex) Planned to move some of these APIs to a cython __init__.pxd for further use in Cython...
+from cpython.unicode cimport PyUnicode_Check
+from cpython.exc cimport PyErr_SetNone
+from libc.stdint cimport uint8_t
+from libc.stdio cimport FILE, fflush, fprintf, fwrite, stdin, stderr, stdout
 
 cdef extern from "Python.h":
     unsigned long PyThread_get_thread_ident()
 
-# TODO: Public exposure while dissallowing external editing
+
 DUK_TYPE_NONE = 0
 DUK_TYPE_UNDEFINED = 1
 DUK_TYPE_NULL = 2
@@ -27,17 +21,181 @@ DUK_TYPE_OBJECT = 6
 DUK_TYPE_BUFFER = 7
 DUK_TYPE_POINTER = 8
 DUK_TYPE_LIGHTFUNC = 9
+
 DUK_ENUM_OWN_PROPERTIES_ONLY = (1 << 2)
+
 DUK_VARARGS = -1
+
 DUK_ERR_ERROR = 100
+
+# We should really be taking Python's memory and not outside memory
+# so that were able to get Better performance and recycled resources 
+# as a result.
+cdef extern from *:
+    """
+#define DUK_ANSI_MALLOC PyMem_RawMalloc
+#define DUK_ANSI_REALLOC PyMem_RawRealloc
+#define DUK_ANSI_FREE PyMem_RawFree 
+    """
+
+# TODO: Reseperate into a seperate file to enhance readability.
+cdef extern from 'duktape.h':
+    ctypedef struct duk_context:
+        pass
+
+    ctypedef int duk_errcode_t
+    ctypedef int duk_int_t
+    ctypedef size_t duk_size_t
+    ctypedef duk_int_t duk_idx_t
+    ctypedef int duk_bool_t
+    ctypedef unsigned int duk_uint_t
+    ctypedef unsigned int duk_uarridx_t
+    ctypedef double duk_double_t
+    ctypedef int duk_ret_t
+
+    ctypedef void* (*duk_alloc_function) (void *udata, duk_size_t size)
+    ctypedef void* (*duk_realloc_function) (void *udata, void *ptr, duk_size_t size)
+    ctypedef void (*duk_free_function) (void *udata, void *ptr)
+    ctypedef void (*duk_fatal_function) (duk_context *ctx, duk_errcode_t code, const char *msg)
+    ctypedef duk_ret_t (*duk_c_function)(duk_context *ctx)
+    ctypedef duk_ret_t (*duk_safe_call_function) (duk_context *ctx, void *udata)
+
+    cdef duk_context* duk_create_heap(duk_alloc_function alloc_func, duk_realloc_function realloc_func, duk_free_function free_func, void *heap_udata, duk_fatal_function fatal_handler)
+    cdef duk_context* duk_create_heap_default()
+    cdef void duk_destroy_heap(duk_context *context)
+    cdef duk_int_t duk_peval_string(duk_context *context, const char *source)
+    cdef const char* duk_safe_to_string(duk_context *ctx, duk_idx_t index)
+    cdef void duk_pop(duk_context *ctx)
+
+    cdef duk_bool_t duk_get_boolean(duk_context *ctx, duk_idx_t index)
+    cdef const char* duk_get_string(duk_context *ctx, duk_idx_t index)
+    cdef double duk_get_number(duk_context *ctx, duk_idx_t index)
+    cdef int duk_get_type(duk_context *ctx, duk_idx_t index)
+    cdef void duk_enum(duk_context *ctx, duk_idx_t obj_index, duk_uint_t enum_flags)
+    cdef duk_bool_t duk_next(duk_context *ctx, duk_idx_t enum_index, duk_bool_t get_value)
+    cdef duk_bool_t duk_get_prop_string(duk_context *ctx, duk_idx_t obj_index, const char *key)
+    cdef duk_bool_t duk_get_prop_index(duk_context *ctx, duk_idx_t obj_index, duk_uarridx_t arr_index)
+    cdef duk_bool_t duk_is_array(duk_context *ctx, duk_idx_t index)
+    cdef duk_int_t duk_get_int(duk_context *ctx, duk_idx_t index)
+    cdef void duk_push_undefined(duk_context *ctx)
+    cdef void duk_push_null(duk_context *ctx)
+    cdef void duk_push_boolean(duk_context *ctx, duk_bool_t value)
+    cdef duk_bool_t duk_put_prop(duk_context *ctx, duk_idx_t obj_index)
+    cdef duk_idx_t duk_push_object(duk_context *ctx)
+    cdef duk_bool_t duk_put_prop_index(duk_context *ctx, duk_idx_t obj_index, duk_uarridx_t arr_index)
+    cdef duk_idx_t duk_push_array(duk_context *ctx)
+    cdef const char *duk_push_string(duk_context *ctx, const char *str)
+    cdef void duk_push_number(duk_context *ctx, duk_double_t val)
+    cdef void duk_push_int(duk_context *ctx, duk_int_t val)
+    cdef duk_bool_t duk_put_global_string(duk_context *ctx, const char *key)
+    cdef duk_bool_t duk_get_global_string(duk_context *ctx, const char *key)
+    cdef void duk_push_current_function(duk_context *ctx)
+    cdef duk_idx_t duk_get_top(duk_context *ctx)
+    cdef duk_bool_t duk_put_prop_string(duk_context *ctx, duk_idx_t obj_index, const char *key)
+    cdef duk_idx_t duk_push_c_function(duk_context *ctx, duk_c_function func, duk_idx_t nargs)
+    cdef duk_bool_t duk_is_constructor_call(duk_context *ctx)
+    cdef void duk_pop_2(duk_context *ctx)
+    cdef void duk_error(duk_context *ctx, duk_errcode_t err_code, const char *fmt, ...)
+    cdef const char *duk_require_string(duk_context *ctx, duk_idx_t index)
+    cdef duk_ret_t duk_pcall(duk_context *ctx, duk_idx_t nargs)
+    cdef duk_int_t duk_pcall_method(duk_context *ctx, duk_idx_t nargs)
+    cdef duk_bool_t duk_is_object(duk_context *ctx, duk_idx_t index)
+    cdef void duk_push_global_stash(duk_context *ctx)
+    cdef void duk_dup(duk_context *ctx, duk_idx_t from_index)
+    cdef duk_bool_t duk_has_prop_index(duk_context *ctx, duk_idx_t obj_index, duk_uarridx_t arr_index)
+    cdef duk_bool_t duk_del_prop_index(duk_context *ctx, duk_idx_t obj_index, duk_uarridx_t arr_index)
+    cdef duk_bool_t duk_is_callable(duk_context *ctx, duk_idx_t index)
+    cdef void duk_push_pointer(duk_context *ctx, void *p)
+    cdef void *duk_get_pointer(duk_context *ctx, duk_idx_t index)
+    cdef duk_bool_t duk_is_pointer(duk_context *ctx, duk_idx_t index)
+    cdef duk_int_t duk_safe_call(duk_context *ctx, duk_safe_call_function func, void *udata, duk_idx_t nargs, duk_idx_t nrets)
+    cdef void duk_new(duk_context *ctx, duk_idx_t nargs)
+    cdef duk_int_t duk_require_int(duk_context *ctx, duk_idx_t index)
+    cdef void duk_swap(duk_context *ctx, duk_idx_t index1, duk_idx_t index2)
+    cdef void duk_dump_context_stdout(duk_context *ctx)
+    cdef void duk_set_finalizer(duk_context *ctx, duk_idx_t index)
+    cdef void *duk_get_heapptr(duk_context *ctx, duk_idx_t index)
+    cdef void duk_push_this(duk_context *ctx)
+
+    # New
+    duk_bool_t duk_is_buffer(duk_context *thr, duk_idx_t idx)
+    void *duk_get_buffer(duk_context *ctx, duk_idx_t idx, duk_size_t *out_size)
+    void duk_join(duk_context *ctx, duk_idx_t count)
+    void duk_insert(duk_context *ctx, duk_idx_t to_idx)
+    const char *duk_to_string(duk_context *ctx, duk_idx_t idx)
+
+    void duk_push_global_object(duk_context *ctx)
+    # Flags for duk_def_prop() and its variants; base flags + a lot of convenience shorthands */
+    int DUK_DEFPROP_WRITABLE              # (1U << 0)    /* set writable (effective if DUK_DEFPROP_HAVE_WRITABLE set) */
+    int DUK_DEFPROP_ENUMERABLE            # (1U << 1)    /* set enumerable (effective if DUK_DEFPROP_HAVE_ENUMERABLE set) */
+    int DUK_DEFPROP_CONFIGURABLE          # (1U << 2)    /* set configurable (effective if DUK_DEFPROP_HAVE_CONFIGURABLE set) */
+    int DUK_DEFPROP_RESERVED3             # (1U << 3)    /* INTERNAL: reserved, internally accessor flag */
+    int DUK_DEFPROP_RESERVED4             # (1U << 4)    /* INTERNAL: reserved */
+    int DUK_DEFPROP_RESERVED5             # (1U << 5)    /* INTERNAL: reserved */
+    int DUK_DEFPROP_RESERVED6             # (1U << 6)    /* INTERNAL: reserved */
+    int DUK_DEFPROP_RESERVED7             # (1U << 7)    /* INTERNAL: reserved */
+    int DUK_DEFPROP_HAVE_SHIFT_COUNT      # 8            /* INTERNAL */
+    int DUK_DEFPROP_HAVE_WRITABLE         # (1U << 8)    /* set/clear writable */
+    int DUK_DEFPROP_HAVE_ENUMERABLE       # (1U << 9)    /* set/clear enumerable */
+    int DUK_DEFPROP_HAVE_CONFIGURABLE     # (1U << 10)   /* set/clear configurable */
+    int DUK_DEFPROP_HAVE_VALUE            # (1U << 11)   /* set value (given on value stack) */
+    int DUK_DEFPROP_HAVE_GETTER           # (1U << 12)   /* set getter (given on value stack) */
+    int DUK_DEFPROP_HAVE_SETTER           # (1U << 13)   /* set setter (given on value stack) */
+    int DUK_DEFPROP_FORCE                 # (1U << 14)   /* force change if possible, may still fail for e.g. virtual properties */
+    int DUK_DEFPROP_THROW                 # (1U << 15)   /* INTERNAL: throw on errors */
+    int DUK_DEFPROP_SET_WRITABLE
+    int DUK_DEFPROP_SET_CONFIGURABLE
+    void duk_def_prop(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags)
+
+# Kept around for backwards compatability
+cdef extern from 'duk_module_duktape.h':
+    ctypedef struct duk_context:
+        pass
+
+    cdef void duk_module_duktape_init(duk_context *ctx)
+
+
+# cdef extern from 'vendor/duk_print_alert.c':
+#     ctypedef struct duk_context:
+#         pass
+
+#     cdef void duk_print_alert_init(duk_context *ctx, duk_uint_t flags)
+
+
+# Based off duktape example api_testcase_main.c that introduces a new method for printing out alerts
+# We could always go more pythonic or allow it to have callbacks or be optionally ignored future update...
+cdef duk_ret_t runtests_print_alert_helper(duk_context *ctx, FILE *fh):
+    cdef duk_idx_t nargs
+    cdef uint8_t *buf
+    cdef duk_size_t sz_buf
+    
+    nargs = duk_get_top(ctx)
+    if (nargs == 1 and duk_is_buffer(ctx, 0)):
+        buf = <uint8_t*>duk_get_buffer(ctx, 0, &sz_buf)
+        fwrite(buf, 1, <size_t> sz_buf, fh)
+    else:
+        duk_push_string(ctx, " ")
+        duk_insert(ctx, 0)
+        duk_join(ctx, nargs)
+        fprintf(fh, "%s\n", duk_to_string(ctx, -1))
+    fflush(fh)
+    return 0
+
+cdef duk_ret_t runtests_print(duk_context *ctx) noexcept:
+    return runtests_print_alert_helper(ctx, stdout)
+
+cdef duk_ret_t runtests_alert(duk_context *ctx) noexcept:
+    return runtests_print_alert_helper(ctx, stderr)
+
+
+
+
 
 
 # NOTE: It's better that these be C-Extensions for increased performance reasons...
 cdef class DuktapeError(Exception):
     pass
 
-cdef class DuktapeFatalError(Exception):
-    pass
 
 cdef class DuktapeThreadError(DuktapeError):
     pass
@@ -45,34 +203,6 @@ cdef class DuktapeThreadError(DuktapeError):
 
 cdef class JSError(Exception):
     pass
-
-# New in duktape 3.0 alloc functions
-
-cdef void* pyduk_malloc(
-    void* udata,
-    duk_size_t size
-) noexcept:
-    return PyMem_Malloc(size)
-
-cdef void* pyduk_realloc(
-    void* udata,
-    void* ptr,
-    duk_size_t size
-) noexcept:
-    return PyMem_Realloc(ptr, size)
-
-cdef void pyduk_free(
-    void* udata,
-    void* ptr
-) noexcept:
-    PyMem_Free(ptr)
-
-# Probably the best way to handle such an occurance...
-# TODO: Fatal handler?
-cdef void pyduk_fatal_function(void* udata, const char* msg) noexcept:
-    PyErr_SetString(DuktapeFatalError, <char*>msg)
-
-
 
 
 cdef class DuktapeContext(object):
@@ -102,23 +232,40 @@ cdef class DuktapeContext(object):
         self.registered_proxies = {}
         self.registered_proxies_reverse = {}
 
-        self.ctx = duk_create_heap(pyduk_malloc, pyduk_realloc, pyduk_free, <void*>self, pyduk_fatal_function)
+        # We should really be using python's memory so that way
+        # the garbage collector can recyle it if needed.
+        self.ctx = duk_create_heap_default()
         if self.ctx == NULL:
-            # TODO: raise MemoryError instead...
             raise DuktapeError('Can\'t allocate context')
 
         set_python_context(self.ctx, self)
-        # duk_print_alert_init(self.ctx, 0)
+        
+        duk_module_duktape_init(self.ctx)
+        self._init_alerts_backwards_compat()
+
         self._setup_module_search_function()
 
+    cdef void _init_alerts_backwards_compat(self):
+        # alterts were Removed in 3.0
+        # This at least Creates backwards compatability for print and alert statements
+        duk_push_global_object(self.ctx)
+        duk_push_string(self.ctx, "print")
+        duk_push_c_function(self.ctx, runtests_print, DUK_VARARGS)
+        duk_def_prop(self.ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_SET_WRITABLE | DUK_DEFPROP_SET_CONFIGURABLE)
+        duk_push_string(self.ctx, "alert")
+        duk_push_c_function(self.ctx, runtests_alert, DUK_VARARGS)
+        duk_def_prop(self.ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_SET_WRITABLE | DUK_DEFPROP_SET_CONFIGURABLE)
+        duk_pop(self.ctx)
+
     cdef void _setup_module_search_function(self):
+        
         duk_get_global_string(self.ctx, b"Duktape")
         duk_push_c_function(self.ctx, module_search, 1)
         duk_put_prop_string(self.ctx, -2, b"modSearch")
         duk_pop(self.ctx)
 
     # Nitpick, this should be internal and not public...
-    cdef inline int _check_thread(self):
+    cdef inline int _check_thread(self) except -1:
         if PyThread_get_thread_ident() != self.thread_id:
             PyErr_SetNone(DuktapeThreadError)
             return -1
@@ -182,7 +329,7 @@ cdef class DuktapeContext(object):
         if self._check_thread() < 0:
             raise
 
-        if duk_eval_raw(self.ctx, PyBytes_AS_STRING(src), PyBytes_GET_SIZE(src), 8) != 0: # DUK_COMPILE_EVAL
+        if duk_peval_string(self.ctx, src) != 0:
             error = self.get_error()
             duk_pop(self.ctx)
             result = None
@@ -198,7 +345,7 @@ cdef class DuktapeContext(object):
 
     cdef object get_error(self):
         if duk_get_prop_string(self.ctx, -1, b'stack') == 0:
-            error = duk_safe_to_lstring(self.ctx, -2, NULL).decode()
+            error = duk_safe_to_string(self.ctx, -2).decode()
         else:
             error = to_python(self, -1)
 
@@ -359,7 +506,7 @@ cdef class JSProxy(object):
         ctx = self.__ref.py_ctx.ctx
 
         self.__ref.to_js()
-        res = <bytes>duk_safe_to_lstring(ctx, -1, NULL)
+        res = <bytes>duk_safe_to_string(ctx, -1)
         duk_pop(ctx)
 
         return '<JSProxy: {}, bind_proxy={}>'.format(res.decode(), self.__bind_proxy.__repr__())
@@ -389,7 +536,7 @@ cdef class JSProxy(object):
 
         self.__ref.to_js()
 
-        if not duk_is_function(ctx, -1):
+        if not duk_is_callable(ctx, -1):
             duk_pop(ctx)
             raise TypeError('Can\'t call')
 
@@ -448,7 +595,7 @@ cdef class JSProxy(object):
             for key in keys:
                 yield key
 
-    cpdef object to_js(self):
+    cpdef to_js(self):
         if self.__ref.py_ctx._check_thread() < 0:
             raise
         self.__ref.to_js()
@@ -479,7 +626,7 @@ cdef duk_ret_t module_search(duk_context *ctx) noexcept:
         with open(py_ctx.get_file_path(module_id.decode()), 'rb') as module:
             source = module.read()
     except:
-        duk_error(ctx, DUK_ERR_ERROR, ('Could not load module: %s' % module_id.decode('utf-8')).encode('utf-8'))
+        duk_error(ctx, DUK_ERR_ERROR, b'Could not load module: %s', module_id)
 
     duk_push_string(ctx, source)
 
@@ -523,8 +670,9 @@ cdef object to_python(DuktapeContext py_ctx, duk_idx_t index, JSProxy bind_proxy
     assert False
 
 
-cdef inline object get_python_string(duk_context *ctx, duk_idx_t index):
-    return duk_get_string(ctx, index).decode(errors='surrogateescape')
+cdef object get_python_string(duk_context *ctx, duk_idx_t index):
+    return duk_get_string(ctx, index).decode(errors='replace')
+
 
 cdef void to_js(duk_context *ctx, object value) except *:
     if value is None:
@@ -740,4 +888,4 @@ def wrap_python_exception(DuktapeContext py_ctx):
     except:
         error = traceback.format_exc()
         error = error.replace('%', '%%')
-        duk_error(py_ctx.ctx, DUK_ERR_ERROR, PyUnicode_AsUTF8(error))
+        duk_error(py_ctx.ctx, DUK_ERR_ERROR, error.encode())
