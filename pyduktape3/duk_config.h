@@ -61,8 +61,16 @@
  *
  */
 
+
+
+
 #if !defined(DUK_CONFIG_H_INCLUDED)
 #define DUK_CONFIG_H_INCLUDED
+
+/* NOTE: Vizonex Edit added  extern "C" { Markers so that github marks this as C not C++ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Recommended config option DUK_USE_FATAL_HANDLER not provided */
 
@@ -3264,5 +3272,10 @@ typedef struct duk_hthread duk_context;
 #else
 #error unsupported: byte order detection failed
 #endif  /* defined(DUK_USE_BYTEORDER) */
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  /* DUK_CONFIG_H_INCLUDED */
