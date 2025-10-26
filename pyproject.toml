@@ -18,7 +18,7 @@ zip-safe = false
 packages = ['pyduktape3']
 
 ext-modules = [
-{name = "pyduktape3._pyduktape3", sources = ["pyduktape3/_pyduktape3.pyx", "vendor/duktape.c", "vendor/duk_module_duktape.c"], include-dirs=['vendor']}
+{name = "pyduktape3._pyduktape3", sources = ["pyduktape3/_pyduktape3.pyx", "vendor/duktape.c", "vendor/duk_module_duktape.c"], include-dirs=['vendor', 'pyduktape3']}
 ]
 
 [project.urls]
