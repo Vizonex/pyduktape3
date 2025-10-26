@@ -1,0 +1,4 @@
+include pyduktape3/*.pxd
+include pyduktape3/*.h
+include pyduktape3/*.pyx
+exclude tests/*

@@ -39,6 +39,9 @@ cdef extern from *:
     """
 
 # TODO: Reseperate into a seperate file to enhance readability.
+
+# NOTE: duktape.h is located in pyduktape3 module since 
+# pyduktape3 can interlope & support cython compilations 
 cdef extern from 'duktape.h':
     ctypedef struct duk_context:
         pass
@@ -206,22 +209,7 @@ cdef class JSError(Exception):
 
 
 cdef class DuktapeContext(object):
-    cdef duk_context *ctx
     
-    cdef object js_base_path
-    # index into the global js stash
-    # when a js value is returned to python,
-    # a reference is kept in the global stash
-    # to avoid garbage collection
-    cdef int next_ref_index
-
-    # these keep python objects referenced only by js code alive
-    cdef dict registered_objects
-    cdef dict registered_proxies
-    cdef dict registered_proxies_reverse
-
-    # Thread id
-    cdef unsigned long thread_id
 
     def __cinit__(self):
         self.thread_id = PyThread_get_thread_ident()
@@ -264,13 +252,7 @@ cdef class DuktapeContext(object):
         duk_put_prop_string(self.ctx, -2, b"modSearch")
         duk_pop(self.ctx)
 
-    # Nitpick, this should be internal and not public...
-    cdef inline int _check_thread(self) except -1:
-        if PyThread_get_thread_ident() != self.thread_id:
-            PyErr_SetNone(DuktapeThreadError)
-            return -1
-        return 0
-
+    
     def set_globals(self, **kwargs):
         if self._check_thread() < 0:
             raise
@@ -420,8 +402,6 @@ cdef DuktapeContext get_python_context(duk_context *ctx):
 
 
 cdef class JSRef(object):
-    cdef DuktapeContext py_ctx
-    cdef int ref_index
 
     def __init__(self, DuktapeContext py_ctx, int ref_index):
         py_ctx._check_thread()
@@ -450,12 +430,7 @@ cdef class JSRef(object):
         duk_pop(self.py_ctx.ctx)
 
 
-ctypedef duk_ret_t (*callfunc)(duk_context *, duk_idx_t) 
-
-
 cdef class JSProxy(object):
-    cdef JSRef __ref
-    cdef object __bind_proxy
 
     def __init__(self, JSRef ref, object bind_proxy):
         ref.py_ctx._check_thread()
