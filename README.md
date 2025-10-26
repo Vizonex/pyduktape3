@@ -2,7 +2,7 @@
 Coming soon
 
 ## Reasons for creation of yet another sequal library
-- pyduktape2 doesn't get a whole lot of activity anymore and I had ideas on improving the this library invovling
+- pyduktape2 doesn't get a whole lot of activity anymore and I had ideas on improving the library invovling
   - Typehints and stubfiles (The lack of these got annoying relatively quickly)
   - cimports for replacing old costly apis
   - improvements being made to cython in general that could make the Contexts run a bit smoother.
