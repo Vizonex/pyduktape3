@@ -22,7 +22,25 @@ class DuktapeThreadError(DuktapeError): ...
 class JSError(Exception): ...
 
 class DuktapeContext:
-    def __init__(self) -> None:...
+    def __init__(
+        self, 
+        disable_alterts: bool = False,
+        disable_modules: bool = False
+    ) -> None:
+        """
+        Initalizes a DuktapeContext
+
+        :param disable_alterts: disables alterts such as alert() and print() respectively...
+        :param disable_modules: disables the require function 
+            Good for simulating html5 javascript where this should be disabled.
+            This is bad if you need modules. It's best to leave this as false
+            if this is the case.
+        
+        :raises DuktapeError: if the `duk_create_heap_default()` failes to create a C context
+
+        """
+        ...
+    
     def set_globals(self, **kwargs: Any) -> None: ...
     def get_global(self, name: str | bytes) -> Any: ...
     def set_base_path(self, path: str | bytes | Path) -> None: ...

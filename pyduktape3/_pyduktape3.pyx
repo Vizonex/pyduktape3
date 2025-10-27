@@ -2,7 +2,8 @@
 import contextlib
 import os
 import traceback
-from cpython.unicode cimport PyUnicode_Check
+from cpython.object cimport PyObject_Str
+from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8String, PyUnicode_FromString, PyUnicode_FromFormat
 from cpython.exc cimport PyErr_SetNone
 from libc.stdint cimport uint8_t
 from libc.stdio cimport FILE, fflush, fprintf, fwrite, stdin, stderr, stdout
@@ -10,23 +11,25 @@ from libc.stdio cimport FILE, fflush, fprintf, fwrite, stdin, stderr, stdout
 cdef extern from "Python.h":
     unsigned long PyThread_get_thread_ident()
 
+cpdef enum pyduktape_type:
+    DUK_TYPE_NONE = 0
+    DUK_TYPE_UNDEFINED = 1
+    DUK_TYPE_NULL = 2
+    DUK_TYPE_BOOLEAN = 3
+    DUK_TYPE_NUMBER = 4
+    DUK_TYPE_STRING = 5
+    DUK_TYPE_OBJECT = 6
+    DUK_TYPE_BUFFER = 7
+    DUK_TYPE_POINTER = 8
+    DUK_TYPE_LIGHTFUNC = 9
+    DUK_VARARGS = -1
 
-DUK_TYPE_NONE = 0
-DUK_TYPE_UNDEFINED = 1
-DUK_TYPE_NULL = 2
-DUK_TYPE_BOOLEAN = 3
-DUK_TYPE_NUMBER = 4
-DUK_TYPE_STRING = 5
-DUK_TYPE_OBJECT = 6
-DUK_TYPE_BUFFER = 7
-DUK_TYPE_POINTER = 8
-DUK_TYPE_LIGHTFUNC = 9
+    DUK_ENUM_OWN_PROPERTIES_ONLY = (1 << 2)
 
-DUK_ENUM_OWN_PROPERTIES_ONLY = (1 << 2)
+    DUK_ERR_ERROR = 100
 
-DUK_VARARGS = -1
-
-DUK_ERR_ERROR = 100
+# Simillar techniques to what aiohttp _http_writer & _http_parser do...
+cdef object os_path_isabs = os.path.isabs
 
 # We should really be taking Python's memory and not outside memory
 # so that were able to get Better performance and recycled resources 
@@ -211,7 +214,23 @@ cdef class JSError(Exception):
 cdef class DuktapeContext(object):
     
 
-    def __cinit__(self):
+    def __cinit__(
+        self, 
+        bint disable_alterts=False,
+        bint disable_modules=False
+    ):
+        """
+        Initalizes a DuktapeContext
+
+        :param disable_alterts: disables alterts such as alert() and print() respectively...
+        :param disable_modules: disables the require function 
+            Good for simulating html5 javascript where this should be disabled.
+            This is bad if you need modules. It's best to leave this false 
+            if this is the case.
+        
+        :raises DuktapeError: if the `duk_create_heap_default()` failes to create a C context
+        """
+
         self.thread_id = PyThread_get_thread_ident()
         self.js_base_path = ''
         self.next_ref_index = -1
@@ -228,13 +247,16 @@ cdef class DuktapeContext(object):
 
         set_python_context(self.ctx, self)
         
-        duk_module_duktape_init(self.ctx)
-        self._init_alerts_backwards_compat()
+        if not disable_modules:
+            duk_module_duktape_init(self.ctx)
+
+        if not disable_alterts:
+            self._init_alerts_backwards_compat()
 
         self._setup_module_search_function()
 
     cdef void _init_alerts_backwards_compat(self):
-        # alterts were Removed in 3.0
+        # alerts were Removed in 3.0
         # This at least Creates backwards compatability for print and alert statements
         duk_push_global_object(self.ctx)
         duk_push_string(self.ctx, "print")
@@ -258,17 +280,18 @@ cdef class DuktapeContext(object):
             raise
 
         for name, value in kwargs.items():
-            self._set_global(name.encode(), value)
+            self._set_global(PyUnicode_AsUTF8String(name), value)
 
     cdef void _set_global(self, const char *name, object value) except *:
         to_js(self.ctx, value)
         duk_put_global_string(self.ctx, name)
 
     def get_global(self, name):
+        # TODO: (Vizonex) allow bytes and custom buffers to be utlized
         if not PyUnicode_Check(name):
             raise TypeError('Global variable name must be a string, {} found'.format(type(name)))
 
-        duk_get_global_string(self.ctx, name.encode())
+        duk_get_global_string(self.ctx, PyUnicode_AsUTF8String(name))
         try:
             value = to_python(self, -1)
         finally:
@@ -277,37 +300,43 @@ cdef class DuktapeContext(object):
         return value
 
     def set_base_path(self, path):
+        # TODO: Allow Pathlib objects?
         if not PyUnicode_Check(path):
             raise TypeError('Path must be a string, {} found'.format(type(path)))
 
         self.js_base_path = path
 
-    def eval_js(self, src):
+    def eval_js(self, object src):
         if isinstance(src, str):
             src = src.encode()
 
+        # TODO: Enable buffer protocol instead so that memoryviews and custom buffers 
+        # can be used
         if not isinstance(src, bytes):
             raise TypeError('Javascript source must be a string or bytes object')
 
         return self._eval_js(src)
 
     def eval_js_file(self, src_path):
-        src_path = str(src_path)
-        with open(self.get_file_path(src_path), 'rb') as f:
+        cdef object _src_path = PyObject_Str(src_path)
+        with open(self.get_file_path(_src_path), 'rb') as f:
             code = f.read()
 
         return self._eval_js(code)
 
-    def get_file_path(self, src_path):
+    def get_file_path(self, str src_path):
         if not src_path.endswith('.js'):
-            src_path = '{}.js'.format(src_path)
+            src_path = '%s.js' % src_path
 
-        if not os.path.isabs(src_path):
+        if not os_path_isabs(src_path):
             src_path = os.path.join(self.js_base_path, src_path)
 
         return src_path
 
     cdef object _eval_js(self, bytes src):
+        cdef:
+            object error
+            object result 
         if self._check_thread() < 0:
             raise
 
@@ -326,8 +355,9 @@ cdef class DuktapeContext(object):
         return result
 
     cdef object get_error(self):
+        cdef object error
         if duk_get_prop_string(self.ctx, -1, b'stack') == 0:
-            error = duk_safe_to_string(self.ctx, -2).decode()
+            error = PyUnicode_FromString(duk_safe_to_string(self.ctx, -2))
         else:
             error = to_python(self, -1)
 
@@ -439,6 +469,7 @@ cdef class JSProxy(object):
         self.__bind_proxy = bind_proxy
 
     def __setattr__(self, name, value):
+        cdef duk_context* ctx
         self.__ref.py_ctx._check_thread()
 
         ctx = self.__ref.py_ctx.ctx
@@ -449,6 +480,7 @@ cdef class JSProxy(object):
         duk_pop(ctx)
 
     def __getattr__(self, name):
+        cdef duk_context* ctx
         self.__ref.py_ctx._check_thread()
 
         ctx = self.__ref.py_ctx.ctx
@@ -546,6 +578,10 @@ cdef class JSProxy(object):
         return self.length
 
     def __iter__(self):
+        cdef duk_context* ctx
+        # unsafe to assume it's bint so lets try int instead...
+        cdef int is_array, is_object
+
         if self.__ref.py_ctx._check_thread() < 0:
             raise
         ctx = self.__ref.py_ctx.ctx
@@ -566,9 +602,10 @@ cdef class JSProxy(object):
                 keys.append(get_python_string(ctx, -1))
                 duk_pop(ctx)
             duk_pop_2(ctx) # pop enumerator and self.__ref
-
-            for key in keys:
-                yield key
+            
+            yield from keys
+            # for key in keys:
+            #     yield key
 
     cpdef to_js(self):
         if self.__ref.py_ctx._check_thread() < 0:
@@ -578,7 +615,7 @@ cdef class JSProxy(object):
 
 cdef duk_ret_t call_new(duk_context *ctx, void *udata) noexcept:
     # [ constructor arg1 arg2 ... argn nargs ]
-    nargs = duk_require_int(ctx, -1)
+    cdef int nargs = duk_require_int(ctx, -1)
     duk_pop(ctx)
     duk_new(ctx, nargs)
     duk_push_undefined(ctx) # replace the popped argument
@@ -594,7 +631,7 @@ cdef duk_ret_t safe_new(duk_context *ctx, int nargs):
 
 
 cdef duk_ret_t module_search(duk_context *ctx) noexcept:
-    py_ctx = get_python_context(ctx)
+    cdef DuktapeContext py_ctx = get_python_context(ctx)
     module_id = duk_require_string(ctx, -1)
 
     try:
@@ -649,7 +686,11 @@ cdef object get_python_string(duk_context *ctx, duk_idx_t index):
     return duk_get_string(ctx, index).decode(errors='replace')
 
 
+
 cdef void to_js(duk_context *ctx, object value) except *:
+    cdef int min_negative_js_int = -(1 << 53) - 1 
+    cdef int max_positive_js_int = 1 << 53
+    cdef int int_value
     if value is None:
         duk_push_null(ctx)
         return
@@ -659,10 +700,9 @@ cdef void to_js(duk_context *ctx, object value) except *:
         return
 
     if isinstance(value, int):
-        max_positive_js_int = 1 << 53
-        min_negative_js_int = -(1 << 53) - 1
+        int_value = <int>value
 
-        if value >= min_negative_js_int and value <= max_positive_js_int:
+        if int_value >= min_negative_js_int and int_value <= max_positive_js_int:
             duk_push_number(ctx, float(value))
         else:
             raise OverflowError('Cannot convert {}, number out of range'.format(value))
@@ -688,7 +728,9 @@ cdef void to_js(duk_context *ctx, object value) except *:
 
 
 cdef void push_py_proxy(duk_context *ctx, object obj) except *:
-    py_ctx = get_python_context(ctx)
+    cdef void* proxy_ptr
+    cdef void* target_ptr
+    cdef DuktapeContext py_ctx = get_python_context(ctx)
 
     duk_get_global_string(ctx, b'Proxy')
 
@@ -727,7 +769,7 @@ cdef duk_ret_t py_proxy_finalizer(duk_context *ctx) noexcept:
 
 
 cdef duk_ret_t py_proxy_get(duk_context *ctx) noexcept:
-    py_ctx = get_python_context(ctx)
+    cdef DuktapeContext py_ctx = get_python_context(ctx)
     n_args = duk_get_top(ctx)
 
     with wrap_python_exception(py_ctx):
@@ -787,8 +829,8 @@ cdef duk_ret_t py_proxy_has(duk_context *ctx) noexcept:
 
 
 cdef duk_ret_t py_proxy_set(duk_context *ctx) noexcept:
-    py_ctx = get_python_context(ctx)
-    n_args = duk_get_top(ctx)
+    cdef DuktapeContext py_ctx = get_python_context(ctx)
+    cdef int n_args = <int>duk_get_top(ctx)
 
     with wrap_python_exception(py_ctx):
         target = py_ctx.get_registered_object(duk_get_heapptr(ctx, 0 - n_args))
@@ -812,14 +854,14 @@ cdef duk_ret_t py_proxy_set(duk_context *ctx) noexcept:
 
 
 cdef duk_ret_t callback_finalizer(duk_context *ctx) noexcept:
-    py_ctx = get_python_context(ctx)
-    target_ptr = duk_get_heapptr(ctx, -1)
+    cdef DuktapeContext py_ctx = get_python_context(ctx)
+    cdef void* target_ptr = duk_get_heapptr(ctx, -1)
     py_ctx.unregister_object(target_ptr)
-
     return 0
 
-
+# TODO: -1 instead of assert for C Error handling?
 cdef void push_callback(duk_context *ctx, object fn) except *:
+    cdef DuktapeContext py_ctx
     assert callable(fn)
 
     py_ctx = get_python_context(ctx)
@@ -833,12 +875,14 @@ cdef void push_callback(duk_context *ctx, object fn) except *:
 
 
 cdef duk_ret_t callback(duk_context *ctx) noexcept:
+    cdef DuktapeContext py_ctx
+    cdef Py_ssize_t n_args, i
     if duk_is_constructor_call(ctx):
         duk_error(ctx, DUK_ERR_ERROR, b'can\'t use new on python objects')
 
     py_ctx = get_python_context(ctx)
 
-    n_args = duk_get_top(ctx)
+    n_args = <Py_ssize_t>duk_get_top(ctx)
 
     with wrap_python_exception(py_ctx):
         args = []
@@ -848,7 +892,7 @@ cdef duk_ret_t callback(duk_context *ctx) noexcept:
         duk_push_current_function(ctx)
         python_callback = py_ctx.get_registered_object(duk_get_heapptr(ctx, -1))
         duk_pop(ctx)
-
+        # TODO: CPython equivent for this Call...
         res = python_callback(*args)
 
         to_js(ctx, res)
@@ -856,6 +900,8 @@ cdef duk_ret_t callback(duk_context *ctx) noexcept:
     return 1
 
 
+# TODO: Lets try using a class instead of a contextmanager soon so we
+# can cut some pure python stuff out that may trigger regessions...
 @contextlib.contextmanager
 def wrap_python_exception(DuktapeContext py_ctx):
     try:
