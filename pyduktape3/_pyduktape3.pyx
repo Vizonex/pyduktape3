@@ -11,22 +11,21 @@ from libc.stdio cimport FILE, fflush, fprintf, fwrite, stdin, stderr, stdout
 cdef extern from "Python.h":
     unsigned long PyThread_get_thread_ident()
 
-cpdef enum pyduktape_type:
-    DUK_TYPE_NONE = 0
-    DUK_TYPE_UNDEFINED = 1
-    DUK_TYPE_NULL = 2
-    DUK_TYPE_BOOLEAN = 3
-    DUK_TYPE_NUMBER = 4
-    DUK_TYPE_STRING = 5
-    DUK_TYPE_OBJECT = 6
-    DUK_TYPE_BUFFER = 7
-    DUK_TYPE_POINTER = 8
-    DUK_TYPE_LIGHTFUNC = 9
-    DUK_VARARGS = -1
 
-    DUK_ENUM_OWN_PROPERTIES_ONLY = (1 << 2)
+DEF DUK_TYPE_NONE = 0
+DEF DUK_TYPE_UNDEFINED = 1
+DEF DUK_TYPE_NULL = 2
+DEF DUK_TYPE_BOOLEAN = 3
+DEF DUK_TYPE_NUMBER = 4
+DEF DUK_TYPE_STRING = 5
+DEF DUK_TYPE_OBJECT = 6
+DEF DUK_TYPE_BUFFER = 7
+DEF DUK_TYPE_POINTER = 8
+DEF DUK_TYPE_LIGHTFUNC = 9
 
-    DUK_ERR_ERROR = 100
+DEF DUK_ENUM_OWN_PROPERTIES_ONLY = (1 << 2)
+
+DEF DUK_ERR_ERROR = 100
 
 # Simillar techniques to what aiohttp _http_writer & _http_parser do...
 cdef object os_path_isabs = os.path.isabs
@@ -151,6 +150,7 @@ cdef extern from 'duktape.h':
     int DUK_DEFPROP_THROW                 # (1U << 15)   /* INTERNAL: throw on errors */
     int DUK_DEFPROP_SET_WRITABLE
     int DUK_DEFPROP_SET_CONFIGURABLE
+    int DUK_VARARGS
     void duk_def_prop(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags)
 
 # Kept around for backwards compatability
@@ -688,9 +688,6 @@ cdef object get_python_string(duk_context *ctx, duk_idx_t index):
 
 
 cdef void to_js(duk_context *ctx, object value) except *:
-    cdef int min_negative_js_int = -(1 << 53) - 1 
-    cdef int max_positive_js_int = 1 << 53
-    cdef int int_value
     if value is None:
         duk_push_null(ctx)
         return
@@ -700,9 +697,10 @@ cdef void to_js(duk_context *ctx, object value) except *:
         return
 
     if isinstance(value, int):
-        int_value = <int>value
+        max_positive_js_int = 1 << 53
+        min_negative_js_int = -(1 << 53) - 1
 
-        if int_value >= min_negative_js_int and int_value <= max_positive_js_int:
+        if value >= min_negative_js_int and value <= max_positive_js_int:
             duk_push_number(ctx, float(value))
         else:
             raise OverflowError('Cannot convert {}, number out of range'.format(value))
