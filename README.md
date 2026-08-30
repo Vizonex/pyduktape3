@@ -3,9 +3,9 @@ A Rewrite of pyduktape and pyduktape2 with extended features, typehinting suppor
 
 > [!Warning]
 > duktape is an __Unmaintained C Library__ and probably will end up being unmaintained unless a miracle happens
-> and soemone steps in and adds in ECMA6. If your looking for a javascript backend that is maintained,
-> try [CYJS](https://github.com/Vizonex/cyjs) It can tackle and rip through html5 easily and has a friendlier
-> License all together.
+> and someone manages to step in and add in ECMA6 which is quite a long ways to go. If your looking for a
+> javascript backend that is maintained, try [CYJS](https://github.com/Vizonex/cyjs) It can tackle and rip
+> through html5 easily and has a friendlier License all together.
 
 
 # Documentation
